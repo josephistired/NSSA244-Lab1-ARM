@@ -2,6 +2,10 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
+    "loadBalancers_LB_WEB_name": {
+      "type": "String",
+      "defaultValue": "LB-WEB"
+    },
     "virtualMachines_WEB1_name": {
       "defaultValue": "WEB1",
       "type": "String"
@@ -16,6 +20,10 @@
     },
     "sshPublicKeys_WEB2_key_name": {
       "defaultValue": "WEB2_key",
+      "type": "String"
+    },
+    "publicIPAddresses_load_balancer_ip_name": {
+      "defaultValue": "load_balancer-ip",
       "type": "String"
     },
     "publicIPAddresses_WEB1_ip_name": {
@@ -73,6 +81,26 @@
       "name": "[parameters('networkSecurityGroups_NSG_WEB_name')]",
       "location": "eastus2",
       "properties": {}
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2024-07-01",
+      "name": "[parameters('publicIPAddresses_load_balancer_ip_name')]",
+      "location": "eastus2",
+      "sku": {
+        "name": "Standard",
+        "tier": "Regional"
+      },
+      "zones": ["2"],
+      "properties": {
+        "publicIPAddressVersion": "IPv4",
+        "publicIPAllocationMethod": "Static",
+        "idleTimeoutInMinutes": 4,
+        "ipTags": [],
+        "ddosSettings": {
+          "protectionMode": "VirtualNetworkInherited"
+        }
+      }
     },
     {
       "type": "Microsoft.Network/publicIPAddresses",
@@ -256,6 +284,11 @@
                   "deleteOption": "Detach"
                 }
               },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers', parameters('loadBalancers_LB_WEB_name')), '/backendAddressPools/web-backend-pool')]"
+                }
+              ],
               "subnet": {
                 "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworks_VNET_LAB1_name'), 'SUBNET-WEB')]"
               },
@@ -307,6 +340,11 @@
               "subnet": {
                 "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworks_VNET_LAB1_name'), 'SUBNET-WEB')]"
               },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers', parameters('loadBalancers_LB_WEB_name')), '/backendAddressPools/web-backend-pool')]"
+                }
+              ],
               "primary": true,
               "privateIPAddressVersion": "IPv4"
             }
@@ -524,6 +562,68 @@
             "enabled": true
           }
         }
+      }
+    },
+    {
+      "type": "Microsoft.Network/loadBalancers",
+      "apiVersion": "2024-07-01",
+      "name": "[parameters('loadBalancers_LB_WEB_name')]",
+      "location": "eastus2",
+      "sku": {
+        "name": "Standard"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/publicIPAddresses', parameters('publicIPAddresses_load_balancer_ip_name'))]"
+      ],
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "lb-frontend",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', parameters('publicIPAddresses_load_balancer_ip_name'))]"
+              }
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "web-backend-pool"
+          }
+        ],
+        "probes": [
+          {
+            "name": "http-probe-80",
+            "properties": {
+              "protocol": "Tcp",
+              "port": 80,
+              "intervalInSeconds": 5,
+              "numberOfProbes": 2
+            }
+          }
+        ],
+        "loadBalancingRules": [
+          {
+            "name": "http-rule-80",
+            "properties": {
+              "protocol": "Tcp",
+              "frontendPort": 80,
+              "backendPort": 80,
+              "idleTimeoutInMinutes": 4,
+              "enableFloatingIP": false,
+              "disableOutboundSnat": true,
+              "frontendIPConfiguration": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', parameters('loadBalancers_LB_WEB_name')), '/frontendIPConfigurations/lb-frontend')]"
+              },
+              "backendAddressPool": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', parameters('loadBalancers_LB_WEB_name')), '/backendAddressPools/web-backend-pool')]"
+              },
+              "probe": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', parameters('loadBalancers_LB_WEB_name')), '/probes/http-probe-80')]"
+              }
+            }
+          }
+        ]
       }
     }
   ]
